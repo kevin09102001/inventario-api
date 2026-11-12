@@ -1,0 +1,353 @@
+openapi: 3.0.3
+info:
+  title: Inventario API
+  version: 1.0.0
+  description: |
+    API de inventario para una cadena de tiendas. Maneja ajustes, traslados entre
+    tiendas y reservas de existencia para facturas en espera, sin permitir
+    existencias negativas.
+servers:
+  - url: http://localhost:3000
+tags:
+  - name: Catálogo
+  - name: Existencias
+  - name: Traslados
+  - name: Reservas
+paths:
+  /health:
+    get:
+      summary: Estado del servicio
+      responses:
+        "200":
+          description: OK
+  /stores:
+    get:
+      tags: [Catálogo]
+      summary: Listar tiendas
+      responses:
+        "200":
+          description: Lista de tiendas
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Store" }
+    post:
+      tags: [Catálogo]
+      summary: Crear tienda
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, name]
+              properties:
+                code: { type: string, example: TGU01 }
+                name: { type: string, example: Tienda Tegucigalpa Centro }
+      responses:
+        "201": { description: Tienda creada }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /products:
+    get:
+      tags: [Catálogo]
+      summary: Listar productos
+      responses:
+        "200":
+          description: Lista de productos
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Product" }
+    post:
+      tags: [Catálogo]
+      summary: Crear producto
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sku, name, price, cost]
+              properties:
+                sku: { type: string, example: ZAP-001 }
+                name: { type: string, example: Tenis deportivo talla 40 }
+                price: { type: number, example: 1250 }
+                cost: { type: number, example: 700 }
+      responses:
+        "201": { description: Producto creado }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /products/{sku}:
+    get:
+      tags: [Catálogo]
+      summary: Ver un producto
+      parameters:
+        - { name: sku, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Producto
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Product" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /stock:
+    get:
+      tags: [Existencias]
+      summary: Consultar existencias
+      parameters:
+        - { name: store, in: query, schema: { type: string } }
+        - { name: sku, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Existencias por tienda y producto
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Stock" }
+  /reports/low-stock:
+    get:
+      tags: [Existencias]
+      summary: Productos con poca existencia disponible
+      parameters:
+        - { name: threshold, in: query, schema: { type: integer, default: 5 } }
+        - { name: store, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: Existencias con disponible menor o igual al mínimo
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Stock" }
+  /movements:
+    get:
+      tags: [Existencias]
+      summary: Historial de movimientos (más recientes primero)
+      parameters:
+        - { name: store, in: query, schema: { type: string } }
+        - { name: sku, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, default: 100 } }
+      responses:
+        "200":
+          description: Movimientos
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Movement" }
+  /adjustments:
+    post:
+      tags: [Existencias]
+      summary: Ajuste manual de inventario
+      description: Cantidad positiva suma, negativa resta. Nunca deja la existencia disponible en negativo.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [store, sku, quantity, reason]
+              properties:
+                store: { type: string, example: TGU01 }
+                sku: { type: string, example: ZAP-001 }
+                quantity: { type: integer, example: 24 }
+                reason: { type: string, example: Recepción de compra }
+      responses:
+        "201":
+          description: Existencia después del ajuste
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Stock" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /transfers:
+    post:
+      tags: [Traslados]
+      summary: Trasladar mercadería entre tiendas
+      description: Todo o nada. Si una línea no tiene existencia suficiente, no se mueve ninguna.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [from, to, items]
+              properties:
+                from: { type: string, example: TGU01 }
+                to: { type: string, example: SPS01 }
+                items:
+                  type: array
+                  items: { $ref: "#/components/schemas/LineItem" }
+                note: { type: string }
+      responses:
+        "201":
+          description: Traslado registrado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Transfer" }
+        "400": { $ref: "#/components/responses/ValidationError" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /transfers/{id}:
+    get:
+      tags: [Traslados]
+      summary: Ver un traslado
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Traslado
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Transfer" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /reservations:
+    post:
+      tags: [Reservas]
+      summary: Apartar existencia para una factura en espera
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [store, items]
+              properties:
+                store: { type: string, example: TGU01 }
+                items:
+                  type: array
+                  items: { $ref: "#/components/schemas/LineItem" }
+                reference: { type: string, example: FAC-000123 }
+      responses:
+        "201":
+          description: Reserva creada
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Reservation" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /reservations/{id}:
+    get:
+      tags: [Reservas]
+      summary: Ver una reserva
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Reserva
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Reservation" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /reservations/{id}/confirm:
+    post:
+      tags: [Reservas]
+      summary: Confirmar la venta de una reserva
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Reserva confirmada }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /reservations/{id}/release:
+    post:
+      tags: [Reservas]
+      summary: Liberar una reserva (factura anulada)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Reserva liberada }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+components:
+  schemas:
+    Store:
+      type: object
+      properties:
+        code: { type: string }
+        name: { type: string }
+        createdAt: { type: string, format: date-time }
+    Product:
+      type: object
+      properties:
+        sku: { type: string }
+        name: { type: string }
+        price: { type: number }
+        cost: { type: number }
+        createdAt: { type: string, format: date-time }
+    Stock:
+      type: object
+      properties:
+        store: { type: string }
+        sku: { type: string }
+        quantity: { type: integer }
+        reserved: { type: integer }
+        available: { type: integer }
+    LineItem:
+      type: object
+      required: [sku, quantity]
+      properties:
+        sku: { type: string }
+        quantity: { type: integer, minimum: 1 }
+    Movement:
+      type: object
+      properties:
+        id: { type: string }
+        type: { type: string, enum: [ADJUSTMENT_IN, ADJUSTMENT_OUT, TRANSFER_OUT, TRANSFER_IN, SALE] }
+        store: { type: string }
+        sku: { type: string }
+        quantity: { type: integer }
+        reference: { type: string }
+        reason: { type: string }
+        createdAt: { type: string, format: date-time }
+    Transfer:
+      type: object
+      properties:
+        id: { type: string }
+        from: { type: string }
+        to: { type: string }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/LineItem" }
+        note: { type: string }
+        createdAt: { type: string, format: date-time }
+    Reservation:
+      type: object
+      properties:
+        id: { type: string }
+        store: { type: string }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/LineItem" }
+        status: { type: string, enum: [ACTIVE, CONFIRMED, RELEASED] }
+        reference: { type: string }
+        createdAt: { type: string, format: date-time }
+        closedAt: { type: string, format: date-time }
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code: { type: string }
+            message: { type: string }
+            details: {}
+  responses:
+    ValidationError:
+      description: Datos inválidos
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: No existe
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Conflict:
+      description: Conflicto (ya existe, existencia insuficiente o reserva cerrada)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }

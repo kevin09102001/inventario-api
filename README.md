@@ -1,7 +1,5 @@
 # Inventario API
 
-[![CI](https://github.com/kevin09102001/inventario-api/actions/workflows/ci.yml/badge.svg)](https://github.com/kevin09102001/inventario-api/actions/workflows/ci.yml)
-
 API REST para manejar el inventario de una cadena de tiendas: ajustes, traslados entre tiendas y reservas de existencia para facturas en espera.
 
 La idea sale de un problema real en retail: el punto de venta deja facturar productos sin existencia y las facturas en espera no apartan la mercadería, entonces el inventario termina en negativo. Esta API no permite que eso pase.
